@@ -17,13 +17,14 @@ void EventDispatcherEPollPrivate::registerSocketNotifier(QSocketNotifier* notifi
 	int fd = static_cast<int>(notifier->socket());
 
 	epoll_event e;
+    memset(&e, 0, sizeof(e));
 	e.data.fd = fd;
 
-	HandleData* data;
+    QSharedPointer<HandleData> data;
 	HandleHash::Iterator it = this->m_handles.find(fd);
 
 	if (it == this->m_handles.end()) {
-		data        = new HandleData;
+        data        = QSharedPointer<HandleData>::create();
 		data->type  = htSocketNotifier;
 		data->sni.r = 0;
 		data->sni.w = 0;
@@ -44,7 +45,6 @@ void EventDispatcherEPollPrivate::registerSocketNotifier(QSocketNotifier* notifi
 		int res = epoll_ctl(this->m_epoll_fd, EPOLL_CTL_ADD, fd, &e);
 		if (Q_UNLIKELY(res != 0)) {
 			qErrnoWarning("%s: epoll_ctl() failed", Q_FUNC_INFO);
-			delete data;
 			return;
 		}
 
@@ -97,8 +97,8 @@ void EventDispatcherEPollPrivate::unregisterSocketNotifier(QSocketNotifier* noti
 
 	SocketNotifierHash::Iterator it = this->m_notifiers.find(notifier);
 	if (Q_LIKELY(it != this->m_notifiers.end())) {
-		HandleData* info = it.value();
-		int fd           = static_cast<int>(notifier->socket());
+        QSharedPointer<HandleData> info = it.value();
+        int fd = static_cast<int>(notifier->socket());
 
 		this->m_notifiers.erase(it); // Hash is not rehashed
 
@@ -106,6 +106,7 @@ void EventDispatcherEPollPrivate::unregisterSocketNotifier(QSocketNotifier* noti
 		Q_ASSERT(hi != this->m_handles.end());
 
 		struct epoll_event e;
+        memset(&e, 0, sizeof(e));
 		e.data.fd = fd;
 
 		if (info->sni.r == notifier) {
@@ -138,7 +139,6 @@ void EventDispatcherEPollPrivate::unregisterSocketNotifier(QSocketNotifier* noti
 			}
 
 			this->m_handles.erase(hi);
-			delete info;
 		}
 
 		if (Q_UNLIKELY(res != 0)) {
@@ -175,7 +175,7 @@ bool EventDispatcherEPollPrivate::disableSocketNotifiers(bool disable)
 	SocketNotifierHash::ConstIterator it = this->m_notifiers.constBegin();
 	while (it != this->m_notifiers.constEnd()) {
 		QSocketNotifier* notifier = it.key();
-		HandleData* info          = it.value();
+        QSharedPointer<HandleData> info = it.value();
 		int fd                    = static_cast<int>(notifier->socket());
 
 		e.events  = disable ? 0 : info->sni.events;

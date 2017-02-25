@@ -67,9 +67,9 @@ public:
 	int remainingTime(int timerId) const;
 	void wakeup(void);
 
-	typedef QHash<int, HandleData*> HandleHash;
-	typedef QHash<int, HandleData*> TimerHash;
-	typedef QHash<QSocketNotifier*, HandleData*> SocketNotifierHash;
+    typedef QHash<int, QSharedPointer<HandleData> > HandleHash;
+    typedef QHash<int, QSharedPointer<HandleData> > TimerHash;
+    typedef QHash<QSocketNotifier*, QSharedPointer<HandleData> > SocketNotifierHash;
 	typedef QHash<int, ZeroTimer> ZeroTimerHash;
 
 private:

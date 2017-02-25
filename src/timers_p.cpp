@@ -1,6 +1,7 @@
 #include <QtCore/QCoreApplication>
 #include <QtCore/QEvent>
 #include <QtCore/QPair>
+#include <QtCore/QSharedPointer>
 #include <sys/epoll.h>
 #include <sys/timerfd.h>
 #include <sys/time.h>
@@ -197,7 +198,7 @@ void EventDispatcherEPollPrivate::registerTimer(int timerId, int interval, Qt::T
 		struct timeval now;
 		gettimeofday(&now, 0);
 
-		HandleData* data  = new HandleData();
+        QSharedPointer<HandleData> data = QSharedPointer<HandleData>::create();
 		data->type        = htTimer;
 		data->ti.object   = object;
 		data->ti.when     = now; // calculateNextTimeout() will take care of info->when
@@ -221,18 +222,17 @@ void EventDispatcherEPollPrivate::registerTimer(int timerId, int interval, Qt::T
 
 		if (Q_UNLIKELY(-1 == timerfd_settime(fd, 0, &spec, 0))) {
 			qErrnoWarning("%s: timerfd_settime() failed", Q_FUNC_INFO);
-			delete data;
 			close(fd);
 			return;
 		}
 
 		struct epoll_event event;
+        memset(&event, 0, sizeof(event));
 		event.events  = EPOLLIN;
 		event.data.fd = fd;
 
 		if (Q_UNLIKELY(-1 == epoll_ctl(this->m_epoll_fd, EPOLL_CTL_ADD, fd, &event))) {
 			qErrnoWarning("%s: epoll_ctl() failed", Q_FUNC_INFO);
-			delete data;
 			close(fd);
 			return;
 		}
@@ -257,7 +257,7 @@ bool EventDispatcherEPollPrivate::unregisterTimer(int timerId)
 {
 	TimerHash::Iterator it = this->m_timers.find(timerId);
 	if (it != this->m_timers.end()) {
-		HandleData* data = it.value();
+        QSharedPointer<HandleData> data = it.value();
 
 		int fd = data->ti.fd;
 
@@ -270,7 +270,6 @@ bool EventDispatcherEPollPrivate::unregisterTimer(int timerId)
 		this->m_timers.erase(it); // Hash is not rehashed
 		this->m_handles.remove(fd);
 
-		delete data;
 		return true;
 	}
 
@@ -282,7 +281,7 @@ bool EventDispatcherEPollPrivate::unregisterTimers(QObject* object)
 	bool result = false;
 	TimerHash::Iterator it = this->m_timers.begin();
 	while (it != this->m_timers.end()) {
-		HandleData* data = it.value();
+        QSharedPointer<HandleData> data = it.value();
 
 		if (object == data->ti.object) {
 			result = true;
@@ -293,7 +292,6 @@ bool EventDispatcherEPollPrivate::unregisterTimers(QObject* object)
 			}
 
 			close(fd);
-			delete data;
 
 			it = this->m_timers.erase(it); // Hash is not rehashed
 			this->m_handles.remove(fd);
@@ -324,7 +322,7 @@ QList<QAbstractEventDispatcher::TimerInfo> EventDispatcherEPollPrivate::register
 
 	TimerHash::ConstIterator it = this->m_timers.constBegin();
 	while (it != this->m_timers.constEnd()) {
-		HandleData* data = it.value();
+        QSharedPointer<HandleData> data = it.value();
 
 		if (object == data->ti.object) {
 #if QT_VERSION < 0x050000
@@ -360,7 +358,7 @@ int EventDispatcherEPollPrivate::remainingTime(int timerId) const
 {
 	TimerHash::ConstIterator it = this->m_timers.find(timerId);
 	if (it != this->m_timers.end()) {
-		HandleData* data = it.value();
+        QSharedPointer<HandleData> data = it.value();
 
 		struct timeval when;
 		struct itimerspec spec;
@@ -388,7 +386,7 @@ int EventDispatcherEPollPrivate::remainingTime(int timerId) const
 void EventDispatcherEPollPrivate::timer_callback(TimerInfo& info)
 {
 	uint64_t value;
-	int res;
+    ssize_t res;
 	do {
 		res = read(info.fd, &value, sizeof(value));
 	} while (-1 == res && EINTR == errno);
@@ -425,7 +423,7 @@ bool EventDispatcherEPollPrivate::disableTimers(bool disable)
 
 	TimerHash::Iterator it = this->m_timers.begin();
 	while (it != this->m_timers.end()) {
-		HandleData* data = it.value();
+        QSharedPointer<HandleData> data = it.value();
 
 		if (!disable) {
 			calculateNextTimeout(&data->ti, now, spec);

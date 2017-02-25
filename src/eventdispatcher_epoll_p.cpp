@@ -1,4 +1,5 @@
 #include <QtCore/QCoreApplication>
+#include <QtCore/QSharedPointer>
 #include <unistd.h>
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
@@ -30,7 +31,8 @@ EventDispatcherEPollPrivate::EventDispatcherEPollPrivate(EventDispatcherEPoll* c
 	}
 
 	struct epoll_event e;
-	e.events  = EPOLLIN;
+    memset(&e, 0, sizeof(e));
+    e.events  = EPOLLIN;
 	e.data.fd = this->m_event_fd;
 	if (Q_UNLIKELY(-1 == epoll_ctl(this->m_epoll_fd, EPOLL_CTL_ADD, this->m_event_fd, &e))) {
 		qErrnoWarning("%s: epoll_ctl() failed", Q_FUNC_INFO);
@@ -42,11 +44,7 @@ EventDispatcherEPollPrivate::~EventDispatcherEPollPrivate(void)
 	close(this->m_event_fd);
 	close(this->m_epoll_fd);
 
-	HandleHash::Iterator it = this->m_handles.begin();
-	while (it != this->m_handles.end()) {
-		delete it.value();
-		++it;
-	}
+    this->m_handles.clear();
 }
 
 bool EventDispatcherEPollPrivate::processEvents(QEventLoop::ProcessEventsFlags flags)
@@ -68,6 +66,7 @@ bool EventDispatcherEPollPrivate::processEvents(QEventLoop::ProcessEventsFlags f
 	QCoreApplication::sendPostedEvents(0, (flags & QEventLoop::DeferredDeletion) ? -1 : 0);
 #else
 	QCoreApplication::sendPostedEvents();
+//    QCoreApplication::sendPostedEvents(Q_NULLPTR, QEvent::DeferredDelete);
 #endif
 
 	bool can_wait =
@@ -129,7 +128,7 @@ bool EventDispatcherEPollPrivate::processEvents(QEventLoop::ProcessEventsFlags f
 			else {
 				HandleHash::ConstIterator it = this->m_handles.find(fd);
 				if (Q_LIKELY(it != this->m_handles.constEnd())) {
-					HandleData* data = it.value();
+                    QSharedPointer<HandleData> data = it.value();
 					switch (data->type) {
 						case htSocketNotifier:
 							EventDispatcherEPollPrivate::socket_notifier_callback(data->sni, e.events);
